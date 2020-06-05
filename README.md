@@ -8,6 +8,7 @@ First clone StreamBlocks:
 ```
 git clone https://github.com/streamblocks/streamblocks-tycho streamblocks-tycho
 cd streamblocks-tycho
+git checkout typesystem
 mvn -DskipTests install
 ```
 
