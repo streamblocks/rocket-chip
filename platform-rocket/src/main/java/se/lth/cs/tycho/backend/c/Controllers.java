@@ -3,29 +3,19 @@ package se.lth.cs.tycho.backend.c;
 import org.multij.Binding;
 import org.multij.BindingKind;
 import org.multij.Module;
-import se.lth.cs.tycho.ir.entity.am.ActorMachine;
-import se.lth.cs.tycho.ir.entity.am.ctrl.Exec;
-import se.lth.cs.tycho.ir.entity.am.ctrl.Instruction;
-import se.lth.cs.tycho.ir.entity.am.ctrl.InstructionKind;
-import se.lth.cs.tycho.ir.entity.am.ctrl.State;
-import se.lth.cs.tycho.ir.entity.am.ctrl.Test;
-import se.lth.cs.tycho.ir.entity.am.ctrl.Wait;
 import se.lth.cs.tycho.attribute.ScopeLiveness;
+import se.lth.cs.tycho.ir.entity.am.ActorMachine;
+import se.lth.cs.tycho.ir.entity.am.ctrl.*;
 import se.lth.cs.tycho.settings.Configuration;
 import se.lth.cs.tycho.settings.OnOffSetting;
 
-import java.util.BitSet;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
 import java.util.function.Function;
 
 @Module
 public interface Controllers {
 	@Binding(BindingKind.INJECTED)
-	Backend backend();
+    Backend backend();
 
 	default Emitter emitter() {
 		return backend().emitter();

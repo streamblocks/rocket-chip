@@ -3,6 +3,7 @@ package se.lth.cs.tycho.backend.c;
 import org.multij.Binding;
 import org.multij.BindingKind;
 import org.multij.Module;
+import se.lth.cs.tycho.attribute.GlobalNames;
 import se.lth.cs.tycho.ir.Parameter;
 import se.lth.cs.tycho.ir.decl.GlobalEntityDecl;
 import se.lth.cs.tycho.ir.decl.VarDecl;
@@ -11,7 +12,6 @@ import se.lth.cs.tycho.ir.expr.Expression;
 import se.lth.cs.tycho.ir.network.Connection;
 import se.lth.cs.tycho.ir.network.Instance;
 import se.lth.cs.tycho.ir.network.Network;
-import se.lth.cs.tycho.attribute.GlobalNames;
 import se.lth.cs.tycho.type.Type;
 
 import java.util.*;

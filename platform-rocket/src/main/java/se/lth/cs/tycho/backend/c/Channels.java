@@ -9,16 +9,13 @@ import se.lth.cs.tycho.ir.util.ImmutableEntry;
 import se.lth.cs.tycho.type.IntType;
 import se.lth.cs.tycho.type.Type;
 
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
-import java.util.OptionalInt;
-import java.util.Set;
+import java.util.*;
 import java.util.stream.Collectors;
 
 @Module
 public interface Channels {
-	@Binding(BindingKind.INJECTED) Backend backend();
+	@Binding(BindingKind.INJECTED)
+    Backend backend();
 	default Emitter emitter() { return backend().emitter(); }
 
 	void channelCodeForType(Type type, int size);

@@ -3,22 +3,14 @@ package se.lth.cs.tycho.backend.c;
 import org.multij.Binding;
 import org.multij.Module;
 import org.multij.MultiJ;
-import se.lth.cs.tycho.attribute.ActorMachineScopes;
-import se.lth.cs.tycho.attribute.Closures;
-import se.lth.cs.tycho.attribute.ConstantEvaluator;
-import se.lth.cs.tycho.attribute.FreeVariables;
-import se.lth.cs.tycho.attribute.GlobalNames;
-import se.lth.cs.tycho.attribute.ScopeDependencies;
-import se.lth.cs.tycho.attribute.TypeScopes;
-import se.lth.cs.tycho.attribute.Types;
-import se.lth.cs.tycho.attribute.VariableDeclarations;
+import se.lth.cs.tycho.attribute.*;
+import se.lth.cs.tycho.backend.c.util.Box;
 import se.lth.cs.tycho.backend.chisel.CodeChisel;
 import se.lth.cs.tycho.compiler.CompilationTask;
 import se.lth.cs.tycho.compiler.Context;
 import se.lth.cs.tycho.compiler.UniqueNumbers;
 import se.lth.cs.tycho.ir.network.Instance;
 import se.lth.cs.tycho.phase.TreeShadow;
-import se.lth.cs.tycho.backend.c.util.Box;
 
 import static org.multij.BindingKind.INJECTED;
 import static org.multij.BindingKind.LAZY;
@@ -26,8 +18,10 @@ import static org.multij.BindingKind.LAZY;
 @Module
 public interface Backend {
 	// Attributes
-	@Binding(INJECTED) CompilationTask task();
-	@Binding(INJECTED) Context context();
+	@Binding(INJECTED)
+    CompilationTask task();
+	@Binding(INJECTED)
+    Context context();
 
 	@Binding(LAZY) default Box<Instance> instance() { return Box.empty(); }
 	@Binding(LAZY) default Emitter emitter() { return new Emitter(); };
@@ -62,13 +56,25 @@ public interface Backend {
 	@Binding(LAZY) default TypeScopes typeScopes() {
 		return task().getModule(TypeScopes.key);
 	}
+	@Binding(LAZY) default TupleAnnotations tupleAnnotations() {
+		return task().getModule(TupleAnnotations.key);
+	}
 	// @Binding(LAZY) default ModuleMembers moduleMembers() {
 		// return task().getModule(ModuleMembers.key);
 	// }
 
-	// -- Code generator C
+	// Code generator
 	@Binding(LAZY) default Lists lists() {
 		return MultiJ.from(Lists.class).bind("backend").to(this).instance();
+	}
+	@Binding(LAZY) default Sets sets() {
+		return MultiJ.from(Sets.class).bind("backend").to(this).instance();
+	}
+	@Binding(LAZY) default Maps maps() {
+		return MultiJ.from(Maps.class).bind("backend").to(this).instance();
+	}
+	@Binding(LAZY) default Strings strings() {
+		return MultiJ.from(Strings.class).bind("backend").to(this).instance();
 	}
 	@Binding(LAZY) default Variables variables() {
 		return MultiJ.from(Variables.class).bind("backend").to(this).instance();
@@ -100,20 +106,34 @@ public interface Backend {
 	@Binding(LAZY) default AlternativeChannels channels() {
 		return MultiJ.from(AlternativeChannels.class).bind("backend").to(this).instance();
 	}
-	@Binding(LAZY) default AlgebraicTypes algebraicTypes() {
-		return MultiJ.from(AlgebraicTypes.class).bind("backend").to(this).instance();
+	@Binding(LAZY) default Algebraic algebraic() {
+		return MultiJ.from(Algebraic.class).bind("backend").to(this).instance();
 	}
-	@Binding(LAZY) default PatternMatching patternMatching() {
+	@Binding(LAZY) default PatternMatching patmat() {
 		return MultiJ.from(PatternMatching.class).bind("backend").to(this).instance();
 	}
-
-	// -- Code Generator Chisel
-	@Binding(LAZY) default CodeChisel chiselCode() {
-		return MultiJ.from(CodeChisel.class).bind("backend").to(this).instance();
+	@Binding(LAZY) default Alias alias() {
+		return MultiJ.from(Alias.class).bind("backend").to(this).instance();
+	}
+	@Binding(LAZY) default Tuples tuples() {
+		return MultiJ.from(Tuples.class).bind("backend").to(this).instance();
 	}
 
 	// Utils
-	@Binding(LAZY) default MemoryStack memoryStack() {
-		return MultiJ.from(MemoryStack.class).bind("backend").to(this).instance();
+	@Binding(LAZY) default Trackable trackable() {
+		return MultiJ.from(Trackable.class).bind("backend").to(this).instance();
+	}
+	@Binding(LAZY) default SizeOf sizeof() {
+		return MultiJ.from(SizeOf.class).bind("backend").to(this).instance();
+	}
+	@Binding(LAZY) default Serialization serialization() {
+		return MultiJ.from(Serialization.class).bind("backend").to(this).instance();
+	}
+	@Binding(LAZY) default Free free() {
+		return MultiJ.from(Free.class).bind("backend").to(this).instance();
+	}
+
+	@Binding(LAZY) default CodeChisel codeChisel() {
+		return MultiJ.from(CodeChisel.class).bind("backend").to(this).instance();
 	}
 }

@@ -3,7 +3,7 @@ package se.lth.cs.tycho.backend.c;
 import org.multij.Binding;
 import org.multij.BindingKind;
 import org.multij.Module;
-import se.lth.cs.tycho.backend.chisel.CodeChisel;
+import se.lth.cs.tycho.attribute.Types;
 import se.lth.cs.tycho.ir.Annotation;
 import se.lth.cs.tycho.ir.decl.GlobalEntityDecl;
 import se.lth.cs.tycho.ir.decl.VarDecl;
@@ -12,11 +12,8 @@ import se.lth.cs.tycho.ir.entity.PortDecl;
 import se.lth.cs.tycho.ir.entity.am.*;
 import se.lth.cs.tycho.ir.expr.ExprLiteral;
 import se.lth.cs.tycho.ir.network.Connection;
-import se.lth.cs.tycho.attribute.Types;
-import se.lth.cs.tycho.type.AlgebraicType;
 import se.lth.cs.tycho.type.BoolType;
 import se.lth.cs.tycho.type.CallableType;
-import se.lth.cs.tycho.type.ListType;
 import se.lth.cs.tycho.type.Type;
 
 import java.util.ArrayList;
@@ -28,7 +25,7 @@ public interface Structure {
     @Binding(BindingKind.INJECTED)
     Backend backend();
 
-    String ACC_ANNOTATION = "acc";
+    final String ACC_ANNOTATION = "acc";
 
     default Emitter emitter() {
         return backend().emitter();
@@ -44,10 +41,6 @@ public interface Structure {
 
     default DefaultValues defVal() {
         return backend().defaultValues();
-    }
-
-    default CodeChisel codeChisel() {
-        return backend().chiselCode();
     }
 
     default void actorHdr(GlobalEntityDecl decl) {
@@ -191,20 +184,17 @@ public interface Structure {
                 String actionTag = ((ExprLiteral) annotation.get().getParameters().get(0).getExpression()).getText();
                 emitter().emit("// -- Action Tag : %s", actionTag);
             }
-
             emitter().emit("static void %s_transition_%d(%s_state *self) {", name, i, name);
             emitter().increaseIndentation();
-            backend().memoryStack().enterScope();
-
+            backend().trackable().enter();
             // -- Check if transition contains @acc annotation
             boolean acceleratedTransition = Annotation.hasAnnotationWithName(ACC_ANNOTATION, transition.getAnnotations());
             if (acceleratedTransition) {
-                codeChisel().acceleratedTransition(name, actorMachine, transition);
+                backend().codeChisel().acceleratedTransition(name, actorMachine, transition);
             } else {
                 transition.getBody().forEach(code()::execute);
             }
-
-            backend().memoryStack().exitScope();
+            backend().trackable().exit();
             emitter().decreaseIndentation();
             emitter().emit("}");
             emitter().emit("");
@@ -218,11 +208,11 @@ public interface Structure {
         for (Condition condition : actorMachine.getConditions()) {
             emitter().emit("static _Bool %s_condition_%d(%s_state *self) {", name, i, name);
             emitter().increaseIndentation();
-            backend().memoryStack().enterScope();
+            backend().trackable().enter();
             String result = evaluateCondition(condition);
             String tmp = backend().variables().generateTemp();
             emitter().emit("%s = %s;", backend().code().declaration(BoolType.INSTANCE, tmp), result);
-            backend().memoryStack().exitScope();
+            backend().trackable().exit();
             emitter().emit("return %s;", tmp);
             emitter().decreaseIndentation();
             emitter().emit("}");
@@ -262,9 +252,9 @@ public interface Structure {
                 } else if (var.getValue() != null) {
                     emitter().emit("{");
                     emitter().increaseIndentation();
-                    backend().memoryStack().enterScope();
+                    backend().trackable().enter();
                     code().copy(types().declaredType(var), "self->" + backend().variables().declarationName(var), types().type(var.getValue()), code().evaluate(var.getValue()));
-                    backend().memoryStack().exitScope();
+                    backend().trackable().exit();
                     emitter().decreaseIndentation();
                     emitter().emit("}");
                 } else {
@@ -291,25 +281,11 @@ public interface Structure {
             emitter().emit("static void %s_free_scope_%d(%s_state *self) {", name, i, name);
             emitter().increaseIndentation();
             for (VarDecl var : scope.getDeclarations()) {
-                Type type = types().declaredType(var);
-                if (type instanceof AlgebraicType) {
-                    emitter().emit("{");
-                    emitter().increaseIndentation();
-                    emitter().emit("%s(self->%s);", backend().algebraicTypes().destructor((AlgebraicType) type), backend().variables().declarationName(var));
-                    emitter().decreaseIndentation();
-                    emitter().emit("}");
-                } else if (code().isAlgebraicTypeList(type)) {
-                    emitter().emit("{");
-                    emitter().increaseIndentation();
-                    ListType listType = (ListType) type;
-                    emitter().emit("for (size_t i = 0; i < %s; ++i) {", listType.getSize().getAsInt());
-                    emitter().increaseIndentation();
-                    emitter().emit("%s(self->%s.data[i]);", backend().algebraicTypes().destructor((AlgebraicType) listType.getElementType()), backend().variables().declarationName(var));
-                    emitter().decreaseIndentation();
-                    emitter().emit("}");
-                    emitter().decreaseIndentation();
-                    emitter().emit("}");
-                }
+                emitter().emit("{");
+                emitter().increaseIndentation();
+                backend().free().apply(types().declaredType(var), String.format("self->%s", backend().variables().declarationName(var)));
+                emitter().decreaseIndentation();
+                emitter().emit("}");
             }
             emitter().decreaseIndentation();
             emitter().emit("}");

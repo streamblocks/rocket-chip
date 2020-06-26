@@ -1,17 +1,16 @@
 package se.lth.cs.tycho.phase;
 
 import org.multij.MultiJ;
+import se.lth.cs.tycho.backend.c.Backend;
+import se.lth.cs.tycho.backend.c.Controllers;
 import se.lth.cs.tycho.compiler.CompilationTask;
 import se.lth.cs.tycho.compiler.Compiler;
 import se.lth.cs.tycho.compiler.Context;
 import se.lth.cs.tycho.ir.util.ImmutableList;
-import se.lth.cs.tycho.backend.c.Backend;
-import se.lth.cs.tycho.backend.c.Controllers;
 import se.lth.cs.tycho.reporting.CompilationException;
 import se.lth.cs.tycho.reporting.Diagnostic;
 import se.lth.cs.tycho.settings.Setting;
 
-import java.io.File;
 import java.io.IOException;
 import java.nio.file.*;
 import java.util.List;

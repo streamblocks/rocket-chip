@@ -6,10 +6,10 @@ import org.multij.Module;
 import se.lth.cs.tycho.ir.IRNode;
 import se.lth.cs.tycho.ir.NamespaceDecl;
 import se.lth.cs.tycho.ir.QID;
-import se.lth.cs.tycho.ir.entity.am.ActorMachine;
-import se.lth.cs.tycho.ir.entity.am.Scope;
 import se.lth.cs.tycho.ir.Variable;
 import se.lth.cs.tycho.ir.decl.VarDecl;
+import se.lth.cs.tycho.ir.entity.am.ActorMachine;
+import se.lth.cs.tycho.ir.entity.am.Scope;
 import se.lth.cs.tycho.ir.expr.ExprGlobalVariable;
 
 import java.util.stream.Collectors;
