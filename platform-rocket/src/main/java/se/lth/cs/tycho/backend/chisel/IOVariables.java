@@ -12,6 +12,8 @@ import se.lth.cs.tycho.ir.entity.am.Scope;
 import se.lth.cs.tycho.ir.expr.ExprGlobalVariable;
 import se.lth.cs.tycho.ir.expr.ExprInput;
 import se.lth.cs.tycho.ir.expr.ExprVariable;
+import se.lth.cs.tycho.ir.expr.Expression;
+import se.lth.cs.tycho.ir.stmt.StmtWrite;
 import se.lth.cs.tycho.ir.stmt.lvalue.LValueVariable;
 
 import java.util.Collections;
@@ -76,5 +78,15 @@ public interface IOVariables {
         }
 
         return Collections.emptySet();
+    }
+
+    default Set<VarDecl> IOVariablesWrite(StmtWrite write){
+        Set<VarDecl> declSet = new LinkedHashSet<>();
+        for (Expression expr: write.getValues()){
+            if(expr instanceof ExprVariable)
+                declSet.add(backend().varDecls().declaration((ExprVariable) expr));
+        }
+
+        return declSet;
     }
 }

@@ -21,7 +21,7 @@ public class Rocket implements Platform {
 
 	private static final List<Phase> phases = ImmutableList.<Phase> builder()
 			.addAll(Compiler.frontendPhases())
-			.addAll(Compiler.templatePhases())
+			//.addAll(Compiler.templatePhases())
 			.addAll(Compiler.networkElaborationPhases())
 			.addAll(Compiler.nameAndTypeAnalysis())
 			.addAll(Compiler.actorMachinePhases())

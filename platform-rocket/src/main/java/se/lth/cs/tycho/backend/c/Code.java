@@ -1210,7 +1210,7 @@ public interface Code {
 	void execute(Statement stmt);
 
 	default void execute(StmtConsume consume) {
-		emitter().emit("channel_consume_%s(self->%s_channel, %d);", inputPortTypeSize(consume.getPort()), consume.getPort().getName(), consume.getNumberOfTokens());
+		emitter().emit("channel_consume_%s(self->%s_channel, self->%s_channel_mirror, %d);", inputPortTypeSize(consume.getPort()), consume.getPort().getName(), consume.getPort().getName(), consume.getNumberOfTokens());
 	}
 
 	default void execute(StmtWrite write) {
@@ -1221,7 +1221,7 @@ public interface Code {
 			emitter().emit("%s;", declaration(types().portType(write.getPort()), tmp));
 			for (Expression expr : write.getValues()) {
 				emitter().emit("%s = %s;", tmp, evaluate(expr));
-				emitter().emit("channel_write_one_%s(self->%s_channels, %s);", outputPortTypeSize(write.getPort()), portName, tmp);
+				emitter().emit("channel_write_one_%s(self->%s_channels, self->%s_channels_mirror, %s);", outputPortTypeSize(write.getPort()), portName, portName, tmp);
 			}
 		} else if (write.getValues().size() == 1) {
 			String portType = type(types().portType(write.getPort()));
@@ -1230,7 +1230,7 @@ public interface Code {
 			String temp = variables().generateTemp();
 			emitter().emit("for (size_t %1$s = 0; %1$s < %2$s; %1$s++) {", temp, repeat);
 			emitter().increaseIndentation();
-			emitter().emit("channel_write_one_%1$s(self->%2$s_channels, %3$s.data[%4$s]);", outputPortTypeSize(write.getPort()), portName, value, temp);
+			emitter().emit("channel_write_one_%1$s(self->%2$s_channels, self->%2$s_channels_mirror, %4$s.data[%5$s]);", outputPortTypeSize(write.getPort()), portName, portName, value, temp);
 			emitter().decreaseIndentation();
 			emitter().emit("}");
 		} else {
@@ -1313,8 +1313,14 @@ public interface Code {
 			parameters.add("NULL");
 		} else {
 			String name = evaluate(call.getProcedure());
-			proc = name + ".f";
-			parameters.add(name + ".env");
+			if(name.startsWith("*")) {
+				proc = name.substring(1) + "->f";
+				parameters.add(name.substring(1) + "->env");
+			}
+			else {
+				proc = name + ".f";
+				parameters.add(name + ".env");
+			}
 		}
 		for (Expression parameter : call.getArgs()) {
 			String param = evaluate(parameter);

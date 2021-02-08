@@ -31,6 +31,8 @@ public interface Global {
 		backend().main().emitDefaultHeaders();
 		emitter().emit("#include \"global.h\"");
 		emitter().emit("");
+		globalVariableDeclarations(getGlobalVarDecls(), 0);
+		emitter().emit("");
 		backend().sets().defineSet();
 		emitter().emit("");
 		backend().maps().defineMap();
@@ -87,7 +89,7 @@ public interface Global {
 		emitter().emit("");
 		backend().callables().declareEnvironmentForCallablesInScope(backend().task());
 		emitter().emit("");
-		globalVariableDeclarations(getGlobalVarDecls());
+		globalVariableDeclarations(getGlobalVarDecls(), 1);
 		emitter().emit("");
 		emitter().emit("#endif");
 	}
@@ -98,10 +100,11 @@ public interface Global {
 					.flatMap(unit -> unit.getTree().getVarDecls().stream());
 	}
 
-	default void globalVariableDeclarations(Stream<VarDecl> varDecls) {
+	default void globalVariableDeclarations(Stream<VarDecl> varDecls, int extern) {
 		varDecls.forEach(decl -> {
 			Type type = types().declaredType(decl);
 			String d = code().declaration(type, backend().variables().declarationName(decl));
+			d =  (extern == 1) ? "extern " + d : d;
 			emitter().emit("%s;", d);
 		});
 	}

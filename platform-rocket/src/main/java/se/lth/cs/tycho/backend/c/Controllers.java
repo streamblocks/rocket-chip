@@ -4,8 +4,12 @@ import org.multij.Binding;
 import org.multij.BindingKind;
 import org.multij.Module;
 import se.lth.cs.tycho.attribute.ScopeLiveness;
+import se.lth.cs.tycho.ir.Annotation;
 import se.lth.cs.tycho.ir.entity.am.ActorMachine;
+import se.lth.cs.tycho.ir.entity.am.Transition;
 import se.lth.cs.tycho.ir.entity.am.ctrl.*;
+import se.lth.cs.tycho.ir.expr.ExprLiteral;
+import se.lth.cs.tycho.ir.network.Instance;
 import se.lth.cs.tycho.settings.Configuration;
 import se.lth.cs.tycho.settings.OnOffSetting;
 
@@ -22,7 +26,29 @@ public interface Controllers {
 	}
 
 	default void emitControllerHeader(String name, ActorMachine actorMachine) {
-		emitter().emit("_Bool %s_run(%1$s_state *self);", name);
+		List<Instance> instances =  backend().task().getNetwork().getInstances();
+		ArrayList<String> coreNames = new ArrayList<>(instances.size());
+		for (Instance core : instances){
+			coreNames.add(core.getInstanceName());
+		}
+
+		emitter().emit("_Bool %s_run(%1$s_state *self) SECTION(\".core%d.text\");", name, coreNames.indexOf(name));
+		printTransitionSignatures(name, actorMachine, coreNames.indexOf(name));
+	}
+
+	default void printTransitionSignatures(String name, ActorMachine actorMachine, int index){
+		int i = 0;
+		for (Transition transition : actorMachine.getTransitions()) {
+			Optional<Annotation> annotation = Annotation.getAnnotationWithName("ActionId", transition.getAnnotations());
+			if (annotation.isPresent()) {
+				String actionTag = ((ExprLiteral) annotation.get().getParameters().get(0).getExpression()).getText();
+				emitter().emit("// -- Action Tag : %s", actionTag);
+			}
+			emitter().emit("static void %s_transition_%d(%s_state *self) SECTION(\".core%d.text\");", name, i, name, index);
+
+			emitter().emit("");
+			i++;
+		}
 	}
 
 	OnOffSetting scopeLivenessAnalysis = new OnOffSetting() {

@@ -39,14 +39,9 @@ public interface MainNetwork {
 		List<Connection> connections = network.getConnections();
 		List<Instance> instances = network.getInstances();
 
+		//emitter().emit("static void run(int argc, char **argv) {");
 
-
-		emitter().emit("static void run(int argc, char **argv) {");
-		emitter().increaseIndentation();
-
-		emitter().emit("init_global_variables();");
-
-		int nbrOfPorts = network.getInputPorts().size() + network.getOutputPorts().size();
+		/*int nbrOfPorts = network.getInputPorts().size() + network.getOutputPorts().size();
 		emitter().emit("if (argc != %d) {", nbrOfPorts+1);
 		emitter().increaseIndentation();
 		emitter().emit("fprintf(stderr, \"Wrong number of arguments. Expected %d but was %%d\\n\", argc-1);", nbrOfPorts);
@@ -56,8 +51,7 @@ public interface MainNetwork {
 		emitter().emit("fprintf(stderr, \"Usage: %%s %s\\n\", argv[0]);", args);
 		emitter().emit("return;");
 		emitter().decreaseIndentation();
-		emitter().emit("}");
-		emitter().emit("");
+		emitter().emit("}");*/
 
 		Map<Connection.End, String> connectionNames = new HashMap<>();
 		Map<Connection.End, String> connectionTypes = new HashMap<>();
@@ -65,7 +59,7 @@ public interface MainNetwork {
 		Map<Connection.End, List<Connection.End>> srcToTgt = new HashMap<>();
 
 		for (PortDecl outputPort : network.getOutputPorts()) {
-			targetPorts.put(new Connection.End(Optional.empty(), outputPort.getName()), outputPort);
+			//targetPorts.put(new Connection.End(Optional.empty(), outputPort.getName()), outputPort);
 		}
 		for (Instance inst : instances) {
 			GlobalEntityDecl entityDecl = globalNames().entityDecl(inst.getEntityName(), true);
@@ -82,24 +76,97 @@ public interface MainNetwork {
 					.add(tgt);
 		}
 
-		{
-			int i = 0;
-			for (Map.Entry<Connection.End, PortDecl> targetPort : targetPorts.entrySet()) {
-				Type tokenType = backend().types().declaredPortType(targetPort.getValue());
-				String typeSize = backend().channels().targetEndTypeSize(targetPort.getKey());
-				String channelName = "channel_" + i;
-				connectionTypes.put(targetPort.getKey(), typeSize);
-				connectionNames.put(targetPort.getKey(), channelName);
-				emitter().emit("channel_%s %s;", typeSize, channelName);
-				emitter().emit("channel_create_%s(&%s);", typeSize, channelName);
-				i = i + 1;
-			}
+		// Defining the channels on the memory of corresponding cores
+		ArrayList<String> coreNames = new ArrayList<>(instances.size());
+		for (Instance core : instances){
+			coreNames.add(core.getInstanceName());
 		}
+		int i = 0;
+		for (Map.Entry<Connection.End, PortDecl> targetPort : targetPorts.entrySet()) {
+			Type tokenType = backend().types().declaredPortType(targetPort.getValue());
+			String typeSize = backend().channels().targetEndTypeSize(targetPort.getKey());
+			String channelName = "channel_" + i;
+
+			String sourceActorName = connections.get(i).getSource().getInstance().get();
+			String targetActorName = connections.get(i).getTarget().getInstance().get();
+			int sourceCoreNum = coreNames.indexOf(sourceActorName);
+			int targetCoreNum = coreNames.indexOf(targetActorName);
+
+			connectionTypes.put(targetPort.getKey(), typeSize);
+			connectionNames.put(targetPort.getKey(), channelName);
+			emitter().emit("channel_%s %s SECTION(\".core%d.data\"); //%s -> %s", typeSize, channelName, targetCoreNum, sourceActorName, targetActorName);
+			emitter().emit("channel_%s_mirror %s_mirror SECTION(\".core%d.data\");", typeSize, channelName, sourceCoreNum);
+			i = i + 1;
+		}
+
 		emitter().emit("");
+
 		for (Instance instance : instances) {
-			emitter().emit("static %s_state %1$s;", instance.getInstanceName());
+			emitter().emit("static %s_state %1$s SECTION(\".core%d.data\");", instance.getInstanceName(), coreNames.indexOf(instance.getInstanceName()));
+		}
+
+		emitter().emit("");
+
+		for (Instance instance : instances) {
+			GlobalEntityDecl entityDecl = globalNames().entityDecl(instance.getEntityName(), true);
+			for (VarDecl par : entityDecl.getEntity().getValueParameters()) {
+				boolean assigned = false;
+				for (Parameter<Expression, ?> assignment : instance.getValueParameters()) {
+					if (par.getName().equals(assignment.getName())) {
+						assigned = true;
+					}
+				}
+				if (!assigned) {
+					throw new RuntimeException(String.format("Could not assign to %s. Candidates: {%s}.", par.getName(), String.join(", ", instance.getValueParameters().map(Parameter::getName))));
+				}
+			}
+
+			for (PortDecl port : entityDecl.getEntity().getInputPorts()) {
+				Connection.End end = new Connection.End(Optional.of(instance.getInstanceName()), port.getName());
+			}
+			for (PortDecl port : entityDecl.getEntity().getOutputPorts()) {
+				Connection.End end = new Connection.End(Optional.of(instance.getInstanceName()), port.getName());
+				List<Connection.End> outgoing = srcToTgt.getOrDefault(end, Collections.emptyList());
+				String channels = outgoing.stream().map(connectionNames::get).map(c -> "&"+c).collect(Collectors.joining(", "));
+				Connection.End source = new Connection.End(Optional.of(instance.getInstanceName()), port.getName());
+				String tokenType = backend().channels().sourceEndTypeSize(source);
+				emitter().emit("channel_list_%s %s_%s SECTION(\".core%d.data\")               = { %s };", tokenType, instance.getInstanceName(), port.getName(), coreNames.indexOf(instance.getInstanceName()), channels);
+				emitter().emit("channel_list_%s_mirror %s_%s_mirror SECTION(\".core%d.data\") = { %s_mirror };", tokenType, instance.getInstanceName(), port.getName(), coreNames.indexOf(instance.getInstanceName()), channels);
+			}
+
+			emitter().emit("");
+		}
+		i = 0;
+		emitter().emit("_Bool progress SECTION(\".core0.data\");");
+		for (Instance instance : instances)
+			emitter().emit("_Bool progress"+ i + " SECTION(\".core" + (i++) + ".data\") = true;");
+		emitter().emit("");
+
+		emitter().emit("void thread_entry(int cid, int nc){");
+		emitter().increaseIndentation();
+
+		emitter().emit("if(cid == 0) {");
+		emitter().increaseIndentation();
+		emitter().emit("init_global_variables();");
+		emitter().emit("");
+		/* Core 0 will create all the channels */
+		i = 0;
+		for (Map.Entry<Connection.End, PortDecl> targetPort : targetPorts.entrySet()) {
+			String typeSize = backend().channels().targetEndTypeSize(targetPort.getKey());
+			String channelName = "channel_" + i;
+			emitter().emit("channel_create_%s(&%s, &%s_mirror);", typeSize, channelName, channelName);
+
+			i = i + 1;
+		}
+
+		emitter().emit("");
+
+		for (Instance instance : instances) {
 			emitter().emit("memset(&%s, 0, sizeof(%1$s_state));", instance.getInstanceName());
 		}
+		emitter().decreaseIndentation();
+		emitter().emit("}");
+		emitter().emit("");
 		for (Instance instance : instances) {
 			List<String> initParameters = new ArrayList<>();
 			initParameters.add("&" + instance.getInstanceName());
@@ -119,7 +186,8 @@ public interface MainNetwork {
 
 			for (PortDecl port : entityDecl.getEntity().getInputPorts()) {
 				Connection.End end = new Connection.End(Optional.of(instance.getInstanceName()), port.getName());
-				initParameters.add("&"+connectionNames.get(end));
+				initParameters.add("&"+connectionNames.get(end)); // Input channels
+				initParameters.add("&"+connectionNames.get(end)+"_mirror"); // Mirror of input channels
 			}
 			for (PortDecl port : entityDecl.getEntity().getOutputPorts()) {
 				Connection.End end = new Connection.End(Optional.of(instance.getInstanceName()), port.getName());
@@ -127,13 +195,19 @@ public interface MainNetwork {
 				String channels = outgoing.stream().map(connectionNames::get).map(c -> "&"+c).collect(Collectors.joining(", "));
 				Connection.End source = new Connection.End(Optional.of(instance.getInstanceName()), port.getName());
 				String tokenType = backend().channels().sourceEndTypeSize(source);
-				emitter().emit("channel_list_%s %s_%s = { %s };", tokenType, instance.getInstanceName(), port.getName(), channels);
-				initParameters.add(String.format("%s_%s", instance.getInstanceName(), port.getName()));
+				//emitter().emit("channel_list_%s %s_%s               = { %s } SECTION(\".core%d.data\");", tokenType, instance.getInstanceName(), port.getName(), channels, coreNames.indexOf(instance.getInstanceName()));
+				//emitter().emit("channel_list_%s_mirror %s_%s_mirror = { %s_mirror } SECTION(\".core%d.data\");", tokenType, instance.getInstanceName(), port.getName(), channels, coreNames.indexOf(instance.getInstanceName()));
+				initParameters.add(String.format("%s_%s", instance.getInstanceName(), port.getName())); // Output channel list
+				initParameters.add(String.format("%s_%s_mirror", instance.getInstanceName(), port.getName())); // Output channel_mirror list
 			}
+			emitter().emit("if(cid == %d)", coreNames.indexOf(instance.getInstanceName()));
+			emitter().increaseIndentation();
 			emitter().emit("%s_init_actor(%s);", instance.getInstanceName(), String.join(", ", initParameters));
+			emitter().decreaseIndentation();
 			emitter().emit("");
 		}
 
+		String progressOR = "";
 		int argi = 1;
 		for (PortDecl port : network.getInputPorts()) {
 			Connection.End end = new Connection.End(Optional.empty(), port.getName());
@@ -156,28 +230,46 @@ public interface MainNetwork {
 			emitter().emit("");
 			argi = argi + 1;
 		}
-		emitter().emit("_Bool progress;");
+
+		emitter().emit("syncCores(cid, nc);"); // only if synchronization is included in Main.java
 		emitter().emit("do {");
 		emitter().increaseIndentation();
-		emitter().emit("progress = false;");
+		emitter().emit("switch(cid){");
+		emitter().increaseIndentation();
+		int m = 0;
 		for (PortDecl inputPort : network.getInputPorts()) {
-			emitter().emit("progress |= input_actor_run_%s(%s_input_actor);", backend().channels().sourceEndTypeSize(new Connection.End(Optional.empty(), inputPort.getName())), inputPort.getName());
+			emitter().emit("progress = input_actor_run_%s(%s_input_actor);", backend().channels().sourceEndTypeSize(new Connection.End(Optional.empty(), inputPort.getName())), inputPort.getName());
 		}
 		for (Instance instance : instances) {
-			emitter().emit("progress |= %s_run(&%1$s);", instance.getInstanceName());
+
+			emitter().emit("case " + m + ":");
+			emitter().increaseIndentation();
+			emitter().emit("progress%d = %s_run(&%2$s);", m, instance.getInstanceName());
+			emitter().decreaseIndentation();
+			emitter().emit("break;");
+
+			m++;
+			if(m < instances.size())
+				progressOR += "progress" + (m-1) + " | ";
+			else
+				progressOR += "progress" + (m-1) + ";";
 		}
 		for (PortDecl outputPort : network.getOutputPorts()) {
-			emitter().emit("progress |= output_actor_run_%s(%s_output_actor);", backend().channels().targetEndTypeSize(new Connection.End(Optional.empty(), outputPort.getName())), outputPort.getName());
+			emitter().emit("progress = output_actor_run_%s(%s_output_actor);", backend().channels().targetEndTypeSize(new Connection.End(Optional.empty(), outputPort.getName())), outputPort.getName());
 		}
 		emitter().decreaseIndentation();
-		emitter().emit("} while (progress && !interrupted);");
+		emitter().emit("}");
+		emitter().decreaseIndentation();
+		emitter().emit("progress = " + progressOR);
+		emitter().emit("} while (progress);");
 		emitter().emit("");
+
+		emitter().emit("if(cid == 0){");
+		emitter().increaseIndentation();
 
 		for (Instance instance : instances) {
 			emitter().emit("%s_free_actor(&%1$s);", instance.getInstanceName());
-			emitter().emit("");
 		}
-
 
 		for (Map.Entry<Connection.End, String> nameEntry : connectionNames.entrySet()) {
 			String name = nameEntry.getValue();
@@ -204,10 +296,16 @@ public interface MainNetwork {
 
 		emitter().emit("");
 		emitter().emit("free_global_variables();");
-
+		emitter().decreaseIndentation();
+		emitter().emit("}");
 		emitter().decreaseIndentation();
 		emitter().emit("}");
 		emitter().emit("");
+		emitter().emit("int main(){");
+		emitter().increaseIndentation();
+		emitter().emit("return 0;");
+		emitter().decreaseIndentation();
+		emitter().emit("}");
 		emitter().emit("");
 	}
 

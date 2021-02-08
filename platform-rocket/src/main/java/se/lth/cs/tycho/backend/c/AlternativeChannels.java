@@ -37,11 +37,23 @@ public interface AlternativeChannels extends Channels {
 			emitter().emit("	channel_%s_%s *channel_%d;", tokenType, sizeString, index);
 			index += 1;
 		}
+
 		emitter().emit("");
 		emitter().emit("} channel_list_%s_%s;", tokenType, String.join("_", sizeStrings));
 		emitter().emit("");
 
-		emitter().emit("static inline size_t channel_space_%s_%s(channel_list_%1$s_%2$s channel_list) {", tokenType, String.join("_", sizeStrings));
+		emitter().emit("typedef struct {");
+		index = 0;
+		for (String sizeString : sizeStrings) {
+			emitter().emit("	channel_%s_%s_mirror *channel_%d;", tokenType, sizeString, index);
+			index += 1;
+		}
+
+		emitter().emit("");
+		emitter().emit("} channel_list_%s_%s_mirror;", tokenType, String.join("_", sizeStrings));
+		emitter().emit("");
+
+		emitter().emit("static inline size_t channel_space_%s_%s(channel_list_%1$s_%2$s_mirror channel_list) {", tokenType, String.join("_", sizeStrings));
 		index = 0;
 		emitter().emit("	size_t min = SIZE_MAX;");
 		for (String bufferSize : bufferSizes) {
@@ -55,7 +67,7 @@ public interface AlternativeChannels extends Channels {
 		emitter().emit("}");
 		emitter().emit("");
 
-		emitter().emit("static inline _Bool channel_has_space_%s_%s(channel_list_%1$s_%2$s channel_list, size_t tokens) {", tokenType, String.join("_", sizeStrings));
+		emitter().emit("static inline _Bool channel_has_space_%s_%s(channel_list_%1$s_%2$s_mirror channel_list, size_t tokens) {", tokenType, String.join("_", sizeStrings));
 		index = 0;
 		for (String bufferSize : bufferSizes) {
 			emitter().emit("	if (%s - (channel_list.channel_%d->write - channel_list.channel_%2$d->read) < tokens) {", bufferSize, index);
@@ -67,27 +79,31 @@ public interface AlternativeChannels extends Channels {
 		emitter().emit("}");
 		emitter().emit("");
 
-		emitter().emit("static inline void channel_write_one_%s_%s(channel_list_%1$s_%2$s channel_list, %1$s data) {", tokenType, String.join("_", sizeStrings));
+		emitter().emit("static inline void channel_write_one_%s_%s(channel_list_%1$s_%2$s channel_list, channel_list_%1$s_%2$s_mirror channel_list_mirror, %1$s data) {", tokenType, String.join("_", sizeStrings));
 		index = 0;
 		for (int s : size) {
 			emitter().emit("	{");
+			emitter().emit("		channel_%s_%s_mirror *chan_mirror = channel_list_mirror.channel_%d;", tokenType, sizeToString(s), index);
 			emitter().emit("		channel_%s_%s *chan = channel_list.channel_%d;", tokenType, sizeToString(s), index);
-			emitter().emit("		chan->buffer[chan->write %% %s] = data;", sizeToBufferSize(s));
+			emitter().emit("		chan->buffer[chan_mirror->write %% %s] = data;", sizeToBufferSize(s));
 			emitter().emit("		chan->write++;");
+			emitter().emit("		chan_mirror->write++;");
 			emitter().emit("	}");
 			index += 1;
 		}
 		emitter().emit("}");
 		emitter().emit("");
 
-		emitter().emit("static inline void channel_write_%s_%s(channel_list_%1$s_%2$s channel_list, %1$s *data, size_t tokens) {", tokenType, String.join("_", sizeStrings));
+		emitter().emit("static inline void channel_write_%s_%s(channel_list_%1$s_%2$s channel_list, channel_list_%1$s_%2$s_mirror channel_list_mirror,  %1$s *data, size_t tokens) {", tokenType, String.join("_", sizeStrings));
 		index = 0;
 		for (int s : size) {
 			emitter().emit("	{");
+			emitter().emit("		channel_%s_%s_mirror *chan_mirror = channel_list_mirror.channel_%d;", tokenType, sizeToString(s), index);
 			emitter().emit("		channel_%s_%s *chan = channel_list.channel_%d;", tokenType, sizeToString(s), index);
 			emitter().emit("		for (size_t i = 0; i < tokens; i++) {");
-			emitter().emit("			chan->buffer[chan->write %% %s] = data[i];", sizeToBufferSize(s));
+			emitter().emit("			chan->buffer[chan_mirror->write %% %s] = data[i];", sizeToBufferSize(s));
 			emitter().emit("			chan->write++;");
+			emitter().emit("			chan_mirror->write++;");
 			emitter().emit("		}");
 			emitter().emit("	}");
 			index += 1;
@@ -219,12 +235,22 @@ public interface AlternativeChannels extends Channels {
 		String sizeString = sizeToString(size);
 		String bufferSize = sizeToBufferSize(size);
 
-		emitter().emit("// CHANNEL %s", type);
+		emitter().emit("// CHANNEL %s (at the receiver)", type);
+		emitter().emit("typedef struct {");
+		emitter().emit("	size_t read;");
+		emitter().emit("	size_t write;");
+		//emitter().emit("	%s *buffer;", tokenType);
+		emitter().emit("	%s buffer[%s];", tokenType, bufferSize);
+		emitter().emit("} channel_%s_%s;", tokenType, sizeString);
+		emitter().emit("");
+
+		emitter().emit("// Mirror channel (at the sender side)");
 		emitter().emit("typedef struct {");
 		emitter().emit("	size_t read;");
 		emitter().emit("	size_t write;");
 		emitter().emit("	%s *buffer;", tokenType);
-		emitter().emit("} channel_%s_%s;", tokenType, sizeString);
+		emitter().emit("} channel_%s_%s_mirror;", tokenType, sizeString);
+		emitter().emit("");
 		emitter().emit("");
 
 		emitter().emit("static inline _Bool channel_has_data_%s_%s(channel_%1$s_%2$s *channel, size_t tokens) {", tokenType, sizeString);
@@ -245,21 +271,22 @@ public interface AlternativeChannels extends Channels {
 		emitter().emit("}");
 		emitter().emit("");
 
-		emitter().emit("static inline void channel_consume_%s_%s(channel_%1$s_%2$s *channel, size_t tokens) {", tokenType, sizeString);
-		emitter().emit("	channel->read += tokens;");
+		emitter().emit("static inline void channel_consume_%s_%s(channel_%1$s_%2$s *channel, channel_%1$s_%2$s_mirror *channel_mirror, size_t tokens) {", tokenType, sizeString, tokenType, sizeString);
+		emitter().emit("	channel->read        += tokens;");
+		emitter().emit("	channel_mirror->read += tokens;");
 		emitter().emit("}");
 		emitter().emit("");
 
-		emitter().emit("static void channel_create_%s_%s(channel_%1$s_%2$s *channel) {", tokenType, sizeString);
-		emitter().emit("	%s *buffer = malloc(sizeof(%1$s)*%s);", tokenType, bufferSize);
-		emitter().emit("	channel->read = 0;");
-		emitter().emit("	channel->write = 0;");
-		emitter().emit("	channel->buffer = buffer;");
+		emitter().emit("static void channel_create_%s_%s(channel_%1$s_%2$s *channel, channel_%1$s_%2$s_mirror *channel_mirror) {", tokenType, sizeString);
+		emitter().emit("	channel->read          = 0;");
+		emitter().emit("	channel->write         = 0;");
+		emitter().emit("	channel_mirror->read   = 0;");
+		emitter().emit("	channel_mirror->write  = 0;");
+		emitter().emit("	channel_mirror->buffer = &channel->buffer[0];");
 		emitter().emit("}");
 		emitter().emit("");
 
 		emitter().emit("static void channel_destroy_%s_%s(channel_%1$s_%2$s *channel) {", tokenType, sizeString);
-		emitter().emit("	free(channel->buffer);");
 		emitter().emit("}");
 		emitter().emit("");
 	}

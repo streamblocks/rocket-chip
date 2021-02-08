@@ -6,6 +6,7 @@ import org.multij.MultiJ;
 import se.lth.cs.tycho.attribute.*;
 import se.lth.cs.tycho.backend.c.util.Box;
 import se.lth.cs.tycho.backend.chisel.CodeChisel;
+import se.lth.cs.tycho.backend.chisel.IOVariables;
 import se.lth.cs.tycho.compiler.CompilationTask;
 import se.lth.cs.tycho.compiler.Context;
 import se.lth.cs.tycho.compiler.UniqueNumbers;
@@ -64,6 +65,9 @@ public interface Backend {
 	// }
 
 	// Code generator
+	@Binding(LAZY) default IOVariables ioVariables() {
+		return MultiJ.from(IOVariables.class).bind("backend").to(this).instance();
+	}
 	@Binding(LAZY) default Lists lists() {
 		return MultiJ.from(Lists.class).bind("backend").to(this).instance();
 	}
@@ -135,5 +139,8 @@ public interface Backend {
 
 	@Binding(LAZY) default CodeChisel codeChisel() {
 		return MultiJ.from(CodeChisel.class).bind("backend").to(this).instance();
+	}
+
+	@Binding(LAZY) default VariableScopes variableScopes() { return task().getModule(VariableScopes.key);
 	}
 }

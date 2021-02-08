@@ -25,6 +25,8 @@ public interface DefaultValues {
 		if (t.getSize().isPresent()) {
 			StringBuilder builder = new StringBuilder();
 			String element = defaultValue(t.getElementType());
+			if(t.getElementType() instanceof ListType)
+				builder.append("{");
 			builder.append("{");
 			for (int i = 0; i < t.getSize().getAsInt(); i++) {
 				if (i > 0) {
@@ -33,6 +35,8 @@ public interface DefaultValues {
 				builder.append(element);
 			}
 			builder.append("}");
+			if(t.getElementType() instanceof ListType)
+				builder.append("}");
 			return builder.toString();
 		} else {
 			throw new UnsupportedOperationException("Not implemented");
