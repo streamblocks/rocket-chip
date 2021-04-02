@@ -89,7 +89,7 @@ public interface Callables {
 	default void declareEnvironmentForCallablesInScope(IRNode scope) {
 		for (Expression callable : callablesInScope(scope)) {
 			String functionName = functionName(callable);
-			backend().emitter().emit("envt_%s env_%s;", functionName, functionName);
+			backend().emitter().emit("envt_%s env_%s;", functionName, functionName); //TODO adding static here fixes a problem in global.h but creates another in actor_framebuf (for MPEG)
 		}
 	}
 

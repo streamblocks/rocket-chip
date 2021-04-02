@@ -21,10 +21,8 @@ import se.lth.cs.tycho.ir.stmt.lvalue.*;
 import se.lth.cs.tycho.type.*;
 
 import java.nio.file.Path;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.Iterator;
-import java.util.Set;
+import java.util.*;
+import java.util.stream.Stream;
 
 import static org.multij.BindingKind.LAZY;
 
@@ -65,7 +63,7 @@ public interface CodeChisel {
         Generate and print the block and return the block name
     */
     default String generateFloatAdder(){
-        String adder = "fAdd" + backend().uniqueNumbers().next();
+        String adder = "fpAdd" + backend().uniqueNumbers().next();
         emitter().emit("val " + adder + " = Module(new FPAdd(32))");
         return adder;
     }
@@ -75,13 +73,13 @@ public interface CodeChisel {
     }
 
     default String generateFloatSubtractor(){
-        String subtractor = "fSub" + backend().uniqueNumbers().next();
+        String subtractor = "fpSub" + backend().uniqueNumbers().next();
         emitter().emit("val " + subtractor + " = Module(new FPSub(32))");
         return subtractor;
     }
 
     default String generateFloatMultiplier(){
-        String multiplier = "fMul" + backend().uniqueNumbers().next();
+        String multiplier = "fpMul" + backend().uniqueNumbers().next();
         emitter().emit("val " + multiplier + " = Module(new FPMult(32))");
         return multiplier;
     }
@@ -91,13 +89,19 @@ public interface CodeChisel {
     }
 
     default String generateFloatDivider(){
-        String divider = "fDiv" + backend().uniqueNumbers().next();
+        String divider = "fpDiv" + backend().uniqueNumbers().next();
         emitter().emit("val " + divider + " = Module(new FPDiv(32))");
         return divider;
     }
     default String generateDividerWithSize(int size){
         //TODO: Implement
         return "generateDividerWithSize is not implemented";
+    }
+
+    default String generateFloatSquareRoot(){
+        String sqrt = "fpSqrt" + backend().uniqueNumbers().next();
+        emitter().emit("val " + sqrt + " = Module(new FPSqrt())");
+        return sqrt;
     }
 
     /* End of arithmetic operation block generation */
@@ -127,6 +131,15 @@ public interface CodeChisel {
             emitter().emit(operator + ".io.in2 := " + input2);
         }
         pipelineChisel().setLocalDelay(Integer.max(delay1, delay2));
+    }
+
+    default void setUnaryOpDelay(String operator, Expression left){
+        pipelineChisel().setLocalDelay(0);
+        String input1 = evaluate(left);
+        int delay1 = pipelineChisel().getLocalDelay();
+
+        emitter().emit(operator + ".io.in := " + input1);
+        pipelineChisel().setLocalDelay(delay1);
     }
 
     default void generateClassDefinition(String instanceName, int transitionIndex){
@@ -180,7 +193,7 @@ public interface CodeChisel {
         }
         int longestDelay = pipelineChisel().getLongestDelay();
         if(longestDelay != 0) {
-            emitter().emit("val validReg0 = RegNext(io.en, 0.U)");
+            emitter().emit("val validReg0 = RegNext(io.en)");
             for (int i = 0; i < longestDelay - 1; i++)
                 emitter().emit("val validReg" + (i + 1) + " = RegNext(validReg" + i + ")");
             emitter().emit("io.valid := validReg" + (longestDelay - 1));
@@ -195,18 +208,26 @@ public interface CodeChisel {
         lValues.forEach(child -> ssaChisel().setLocalVarType(lvalue(child), types().type(child)));
     }
 
-    default void declareVersions(){
+    default void declareVersions(Set<VarDecl> inputVars){
         emitter().emit("//Declare all variable versions");
         HashMap<String, Integer> allVarVersions = ssaChisel().getLocalVarVersions();
-        allVarVersions.keySet().forEach(varName -> printVarVersion(varName));
+        allVarVersions.keySet().forEach(varName -> printVarVersion(varName, inputVars));
     }
 
-    default void printVarVersion(String varName){
+    default void printVarVersion(String varName, Set<VarDecl> inputVars){
         int numVer = ssaChisel().getLocalVersion(varName);
         Type varType = ssaChisel().getLocalType(varName);
-        for(int i = 0 ; i < numVer; i++) {
-            String d = declaration(varType, varName + "_v" + (i + 1));
+        int start = 0;
+        for(VarDecl decl : inputVars) {
+            String declarationName = variables().declarationName(decl);
+            if(declarationName.contains(varName)) // Don't print version 0
+                start = 1;
+        }
+        // TODO versions 0 were not printed but they may be used in the muxes, therefore we print them now (QRD case study)
+        for(int i = start ; i < numVer + 1; i++) {
+            String d = declaration(varType, varName + "_v" + (i));
             emitter().emit("%s", d);
+            emitter().emit(varName +  "_v" + i + " := 0.U");    // Initialize the variable
             if(varName.startsWith("a_"))
                 ssaChisel().setVersion(varName, 0);
         }
@@ -221,8 +242,13 @@ public interface CodeChisel {
                     int currentVersion = ssaChisel().getPublicVarVersions().get(variable);
                     emitter().emit("val " + variable + "_v" + Integer.toString(latestVersion + 1) + " = Wire(UInt(width = 32.W))");
                     String newVarName =  variable + "_v" + Integer.toString(ssaChisel().getPublicVarVersions().get(variable) + 1);
-                    String variable1 = variable + "_v" + Integer.toString(versions1.get(variable));
-                    String variable2 = variable + "_v" + Integer.toString(versions2.get(variable));
+                    String variable1 = variable + "_v" + Integer.toString(versions1.get(variable)); // new versions
+                    String variable2 = variable + "_v" + Integer.toString(versions2.get(variable)); // old version
+
+                    // if the older version is 0 and the variable is not an input, then it is not declared
+//                    if(versions2.get(variable) == 0 && )
+  //                      variable2 = "0";
+
                     int delay1 = pipelineChisel().getGlobalDelay(variable1);
                     int delay2 = pipelineChisel().getGlobalDelay(variable2);
                     if(delay1 != delay2){
@@ -252,8 +278,8 @@ public interface CodeChisel {
         }
     }
 
-    default void printPackage(String name){
-        emitter().emit("package " + name + "Acc");
+    default void printPackage(String name, int transitionIndex){
+        emitter().emit("package " + name + "_acc_" + transitionIndex);
     }
     default void printImports(){
         emitter().emit("import chisel3._");
@@ -272,16 +298,16 @@ public interface CodeChisel {
         // Imports
         emitter().emit("import " + instanceName + "_acc_" + transitionIndex + "._");
         emitter().emit("import Chisel._");
-        emitter().emit("freechips.rocketchip.config._");
-        emitter().emit("freechips.rocketchip.subsystem._");
-        emitter().emit("freechips.rocketchip.diplomacy._");
-        emitter().emit("freechips.rocketchip.rocket._");
-        emitter().emit("freechips.rocketchip.tilelink._");
-        emitter().emit("freechips.rocketchip.util.InOrderArbiter");
+        emitter().emit("import freechips.rocketchip.config._");
+        emitter().emit("import freechips.rocketchip.subsystem._");
+        emitter().emit("import freechips.rocketchip.diplomacy._");
+        emitter().emit("import freechips.rocketchip.rocket._");
+        emitter().emit("import freechips.rocketchip.tilelink._");
+        emitter().emit("import freechips.rocketchip.util.InOrderArbiter");
         emitter().emit("");
 
         // Interface definition
-        emitter().emit("class Generated_" + instanceName + "_acc (implicit p: Parameters) extends LazyRocc() (p){" );
+        emitter().emit("class Generated_" + instanceName + "_acc (implicit p: Parameters) extends LazyRoCC() (p){" );
         emitter().increaseIndentation();
         emitter().emit("override lazy val module = new Generated_" + instanceName + "_acc_module(this)");
         emitter().decreaseIndentation();
@@ -302,30 +328,37 @@ public interface CodeChisel {
         emitter().emit("val fire  = cmd.valid && (funct === 4.U)");
 
         int numInputs = inputVars.size();
-        for(int i = 0; i < (numInputs - 1) / 4; i++)
+        for(int i = 1; i < (numInputs - 1) / 4; i++)
             emitter().emit("val in" + i + "   = cmd.valid && (funct === " + i + ".U)");
 
-        emitter().emit(" val returnReg = RegInit(cmd.bits.inst.rd)");
+        // We need to know if there will be read calls to read the outputs which don't fit into the first instructions rd
+        int numOutputs = outputVars.size();
+        if(numOutputs > 2)
+            emitter().emit("val read  = cmd.valid && (funct === 5.U)");
+        for(int i = 1; i < (numOutputs - 1) / 2; i++)
+            emitter().emit("val outReg" + (i - 1) + " = RegInit(UInt(0, 64.W))");
+
+        emitter().emit("val returnReg = RegInit(cmd.bits.inst.rd)");
         emitter().emit("");
 
         // Check if we need to store any inputs
         ArrayList<VarDecl> inputVarsList = new ArrayList<VarDecl>(inputVars);
         ArrayList<VarDecl> outputVarsList = new ArrayList<VarDecl>(outputVars);
         for(int i = 0; i < (numInputs - 1) / 4; i++) {
-            emitter().emit("val " + inputVarsList.get(i).getName() + "_in := RegInit(UInt(0, 32.W))");
-            emitter().emit("val " + inputVarsList.get(i + 1).getName() + "_in := RegInit(UInt(0, 32.W))");
-            emitter().emit("val " + inputVarsList.get(i + 2).getName() + "_in := RegInit(UInt(0, 32.W))");
-            emitter().emit("val " + inputVarsList.get(i + 3).getName() + "_in := RegInit(UInt(0, 32.W))");
+            emitter().emit("val " + inputVarsList.get(i).getName() + "_in = RegInit(UInt(0, 32.W))");
+            emitter().emit("val " + inputVarsList.get(i + 1).getName() + "_in = RegInit(UInt(0, 32.W))");
+            emitter().emit("val " + inputVarsList.get(i + 2).getName() + "_in = RegInit(UInt(0, 32.W))");
+            emitter().emit("val " + inputVarsList.get(i + 3).getName() + "_in = RegInit(UInt(0, 32.W))");
             emitter().emit("");
 
-            emitter().emit("when(in" + i + "){");
+            emitter().emit("when(in" + (i + 1) + "){");
             emitter().increaseIndentation();
             emitter().emit(inputVarsList.get(i).getName() + "_in := cmd.bits.rs1(63,32)");
             emitter().emit(inputVarsList.get(i + 1).getName() + "_in := cmd.bits.rs1(31, 0)");
             emitter().emit(inputVarsList.get(i + 2).getName() + "_in := cmd.bits.rs1(63,32)");
             emitter().emit(inputVarsList.get(i + 3).getName() + "_in := cmd.bits.rs1(31, 0)");
-            emitter().emit("}");
             emitter().decreaseIndentation();
+            emitter().emit("}");
         }
 
         emitter().emit("");
@@ -361,13 +394,36 @@ public interface CodeChisel {
         emitter().emit("}");
         emitter().emit("");
 
-        emitter().emit("io.resp.valid     := acc.io.valid");
         emitter().emit("io.resp.bits.rd   := returnReg");
-        // So far we support only two output values - each 32 bits
-        if(outputVars.size() > 1)
+
+        // So far we support only 4 output values - each 32 bits
+        // TODO make this more dynamic and support more outputs
+        if(outputVars.size() > 2) {
+            emitter().emit("when(read){");
+            emitter().increaseIndentation();
+            if(outputVars.size() > 3)
+                emitter().emit("io.resp.bits.data := Cat(acc.io." + outputVarsList.get(2).getName() + "_out, acc.io." + outputVarsList.get(3).getName() + "_out)");
+            else
+                emitter().emit("io.resp.bits.data := Cat(acc.io." + outputVarsList.get(2).getName() + "_out, 0.U)");
+
+            emitter().emit("io.resp.valid     := true.B");
+            emitter().decreaseIndentation();
+            emitter().emit("}");
+            emitter().emit(".otherwise{");
+            emitter().increaseIndentation();
             emitter().emit("io.resp.bits.data := Cat(acc.io." + outputVarsList.get(0).getName() + "_out, acc.io." + outputVarsList.get(1).getName() + "_out)");
-        else
-            emitter().emit("io.resp.bits.data := Cat(acc.io." + outputVarsList.get(0).getName() + "_out, 0");
+            emitter().emit("io.resp.valid     := acc.io.valid");
+            emitter().decreaseIndentation();
+            emitter().emit("}");
+        }
+        else{
+            if (outputVars.size() > 1)
+                emitter().emit("io.resp.bits.data := Cat(acc.io." + outputVarsList.get(0).getName() + "_out, acc.io." + outputVarsList.get(1).getName() + "_out)");
+            else
+                emitter().emit("io.resp.bits.data := Cat(acc.io." + outputVarsList.get(0).getName() + "_out, 0.U");
+
+            emitter().emit("io.resp.valid     := acc.io.valid");
+        }
 
         emitter().emit("cmd.ready         := true.B");
         emitter().emit("io.interrupt      := false.B");
@@ -388,7 +444,7 @@ public interface CodeChisel {
 
         emitter().open(target().resolve(fileName));
         // Print the package name
-        printPackage(instanceName);
+        printPackage(instanceName, actorMachine.getTransitions().indexOf(transition));
         // Print the imports
         printImports();
         // Scala class definition
@@ -403,7 +459,9 @@ public interface CodeChisel {
 
         // Declare initial version of all variables TODO > done
         findVarVersions(transition);
-        declareVersions();
+        emitter().increaseIndentation();
+        declareVersions(inputVars);
+        emitter().decreaseIndentation();
 
         // When you uncomment this part of code its going to visit all statement on the transition
         transition.getBody().forEach(this::execute);
@@ -702,13 +760,14 @@ public interface CodeChisel {
             case "||":
             case "or":
                 return evaluateBinaryOr(lhs, rhs, binaryOp);
-            case "=":
-            case "==":
-                return evaluateBinaryEq(lhs, rhs, binaryOp);
+
             case "!=":
                 return evaluateBinaryNeq(lhs, rhs, binaryOp);
 
      */
+            case "=":
+            case "==":
+                return evaluateBinaryEq(lhs, rhs, binaryOp);
             case "<":
                 return evaluateBinaryLtn(lhs, rhs, binaryOp);
             case "<=":
@@ -1144,7 +1203,23 @@ public interface CodeChisel {
     }
 
     default String evaluate(ExprApplication apply) {
-        throw new Error("not implemented");
+
+        String functName = "";
+        Expression expr = apply.getFunction();
+       if(expr instanceof ExprVariable) {
+           functName = ((ExprVariable) expr).getVariable().getOriginalName();
+
+            if(functName.contains("sqrt")){
+                // Instantiate a sqrt block -- the result should be put in sqrtx
+                Expression parameter = apply.getArgs().get(0);
+                String sqrt = generateFloatSquareRoot();
+                emitter().emit(sqrt + ".io.en := true.B");
+                setUnaryOpDelay(sqrt, parameter);
+                pipelineChisel().setLocalDelay(pipelineChisel().getLocalDelay() + pipelineChisel().getFloatSqrtDelay());
+                return sqrt + ".io.out";
+            }
+        }
+        return "Function call not supported";
     }
 
     default String evaluate(ExprLambda lambda) {
@@ -1229,7 +1304,8 @@ public interface CodeChisel {
 
             String d = declaration(ltype, declarationName + version);
             trackable().track(declarationName, ltype);
-            emitter().emit("%s", d);
+            // The version 0s are not used, therefore we won't generate the declarations //TODO check this later
+            //emitter().emit("%s", d);
             if (decl.getValue() != null) {
                 copy(ltype, declarationName + version, types().type(decl.getValue()), evaluate(decl.getValue()));
             }
@@ -1283,7 +1359,38 @@ public interface CodeChisel {
     }
 
     default void execute(StmtCall call) {
-        throw new Error("not implemented");
+        trackable().enter();
+/*
+        String proc = "";
+        if(call.getProcedure() instanceof ExprVariable) {
+            proc = ((ExprVariable) call.getProcedure()).getVariable().getOriginalName();
+
+            if(proc.contains("sqrt")){
+                // Instantiate a sqrt block -- the result should be put in sqrtx
+                Expression parameter = call.getArgs().get(0);
+                String param = evaluate(parameter);
+
+                String varName = "";
+                HashMap versions = ssaChisel().getPublicVarVersions();
+                for(Object key : versions.keySet()){
+                    if (((String)key).contains("sqrtx")) {
+                        varName = (String) key;
+                        break;
+                    }
+                }
+
+                ssaChisel().increaseVersion(varName);
+                int version = ssaChisel().getVersion(varName);
+
+                String sqrt = generateFloatSquareRoot();
+                emitter().emit(sqrt + ".io.en := true.B");
+                emitter().emit(sqrt + ".io.in := " + param);
+                emitter().emit(varName + "_v" + version + " := sqrt.io.out");
+                //TODO set the delay
+            }
+        }
+*/
+        trackable().exit();
     }
 
     default void execute(StmtWhile stmt) {

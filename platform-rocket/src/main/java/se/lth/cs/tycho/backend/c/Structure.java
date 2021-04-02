@@ -15,6 +15,7 @@ import se.lth.cs.tycho.ir.entity.am.*;
 import se.lth.cs.tycho.ir.expr.ExprInput;
 import se.lth.cs.tycho.ir.expr.ExprLiteral;
 import se.lth.cs.tycho.ir.network.Connection;
+import se.lth.cs.tycho.ir.network.Instance;
 import se.lth.cs.tycho.ir.stmt.StmtBlock;
 import se.lth.cs.tycho.ir.stmt.StmtConsume;
 import se.lth.cs.tycho.ir.stmt.StmtWrite;
@@ -60,9 +61,9 @@ public interface Structure {
 
     default void actorHeader(String name, ActorMachine actorMachine) {
         actorMachineState(name, actorMachine);
+        actorMachineSectionMacro();
         actorMachineInitHeader(name, actorMachine);
         actorMachineFreeHeader(name, actorMachine);
-        actorMachineSectionMacro();
         actorMachineControllerHeader(name, actorMachine);
         actorMachineCustomInstructionMacros(name, actorMachine);
     }
@@ -94,9 +95,14 @@ public interface Structure {
     }
 
     default void actorMachineInitHeader(String name, ActorMachine actorMachine) {
+        List<Instance> instances =  backend().task().getNetwork().getInstances();
+        ArrayList<String> coreNames = new ArrayList<>(instances.size());
+        for (Instance core : instances){
+            coreNames.add(core.getInstanceName());
+        }
         String selfParameter = name + "_state *self";
         List<String> parameters = getEntityInitParameters(selfParameter, actorMachine);
-        emitter().emit("void %s_init_actor(%s);", name, String.join(", ", parameters));
+        emitter().emit("void %s_init_actor(%s) SECTION(\".core%d.text\");", name, String.join(", ", parameters), coreNames.indexOf(name));
         emitter().emit("");
     }
 
@@ -263,6 +269,7 @@ public interface Structure {
     default void actorMachineSectionMacro(){
         emitter().emit("#undef  SECTION");
         emitter().emit("#define SECTION(x) __attribute__((section(x)))");
+        emitter().emit("");
     }
 
     default List<String> getEntityInitParameters(String selfParameter, Entity actorMachine) {

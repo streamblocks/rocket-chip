@@ -265,7 +265,7 @@ public interface Main {
 		emitter().emit("case RocketCrossingKey => List(RocketCrossingParams(");
 		emitter().increaseIndentation();
 		emitter().emit("crossingType = SynchronousCrossing(),");
-		emitter().emit("aster = TileMasterPortParams(cork = Some(true))");
+		emitter().emit("master = TileMasterPortParams(cork = Some(true))");
 		emitter().decreaseIndentation();
 		emitter().emit("))");
 		emitter().decreaseIndentation();
@@ -335,7 +335,6 @@ public interface Main {
 		emitter().emit("blockBytes = site(CacheBlockBytes),");
 		emitter().emit("scratch = Some(0x80000000L + (" + actorNames.indexOf(instance.getInstanceName()) + " << (log2Up(" + DCACHE_SETS + ") + 6))))),");
 		emitter().decreaseIndentation();
-		emitter().emit("hartId = " + actorNames.indexOf(instance.getInstanceName()) + ",");
 
 		int numAcc = 0;
 		for (Transition transition : actorMachine.getTransitions()) {
@@ -355,11 +354,14 @@ public interface Main {
 				emitter().emit(instanceName + "_acc_" + numAcc + "})");
 				emitter().decreaseIndentation();
 				emitter().decreaseIndentation();
-				emitter().emit(")");
+				emitter().emit("),");
 
 				numAcc++;
 			}
 		}
+
+		emitter().emit("hartId = " + actorNames.indexOf(instance.getInstanceName()));
+
 		emitter().decreaseIndentation();
 		emitter().emit(")");
 		emitter().emit("");

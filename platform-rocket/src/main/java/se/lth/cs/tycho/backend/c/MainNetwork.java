@@ -164,8 +164,7 @@ public interface MainNetwork {
 		for (Instance instance : instances) {
 			emitter().emit("memset(&%s, 0, sizeof(%1$s_state));", instance.getInstanceName());
 		}
-		emitter().decreaseIndentation();
-		emitter().emit("}");
+
 		emitter().emit("");
 		for (Instance instance : instances) {
 			List<String> initParameters = new ArrayList<>();
@@ -200,12 +199,12 @@ public interface MainNetwork {
 				initParameters.add(String.format("%s_%s", instance.getInstanceName(), port.getName())); // Output channel list
 				initParameters.add(String.format("%s_%s_mirror", instance.getInstanceName(), port.getName())); // Output channel_mirror list
 			}
-			emitter().emit("if(cid == %d)", coreNames.indexOf(instance.getInstanceName()));
-			emitter().increaseIndentation();
 			emitter().emit("%s_init_actor(%s);", instance.getInstanceName(), String.join(", ", initParameters));
-			emitter().decreaseIndentation();
 			emitter().emit("");
 		}
+		emitter().decreaseIndentation();
+		emitter().emit("}");
+		emitter().emit("");
 
 		String progressOR = "";
 		int argi = 1;
@@ -260,6 +259,7 @@ public interface MainNetwork {
 		emitter().decreaseIndentation();
 		emitter().emit("}");
 		emitter().decreaseIndentation();
+		emitter().emit("syncCores(cid, nc);");
 		emitter().emit("progress = " + progressOR);
 		emitter().emit("} while (progress);");
 		emitter().emit("");

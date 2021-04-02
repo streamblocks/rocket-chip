@@ -3,6 +3,7 @@ package se.lth.cs.tycho.backend.chisel;
 import org.multij.Binding;
 import org.multij.BindingKind;
 import org.multij.Module;
+import se.lth.cs.tycho.attribute.Types;
 import se.lth.cs.tycho.backend.c.Backend;
 import se.lth.cs.tycho.ir.IRNode;
 import se.lth.cs.tycho.ir.NamespaceDecl;
@@ -15,6 +16,7 @@ import se.lth.cs.tycho.ir.expr.ExprVariable;
 import se.lth.cs.tycho.ir.expr.Expression;
 import se.lth.cs.tycho.ir.stmt.StmtWrite;
 import se.lth.cs.tycho.ir.stmt.lvalue.LValueVariable;
+import se.lth.cs.tycho.type.*;
 
 import java.util.Collections;
 import java.util.LinkedHashSet;
@@ -25,6 +27,10 @@ public interface IOVariables {
 
     @Binding(BindingKind.INJECTED)
     Backend backend();
+
+    default Types types() {
+        return backend().types();
+    }
 
     default Set<VarDecl> IOVariablesRead(IRNode node) {
         Set<VarDecl> read = new LinkedHashSet<>();
@@ -44,6 +50,12 @@ public interface IOVariables {
 
     default Set<VarDecl> IOVariablesRead(ExprVariable expr) {
         VarDecl decl = backend().varDecls().declaration(expr);
+
+        Type type = types().declaredType(decl);
+        if (type instanceof CallableType) {
+            // -- Do nothing
+            return Collections.emptySet();
+        }
 
         IRNode parent = backend().tree().parent(decl);
         if (parent instanceof Scope) {
